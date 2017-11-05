@@ -50,11 +50,10 @@ def Videos(url, title):
 
     for item in json['videos']['videoList']:
 
+        site = item['site']
         stream_url = item['streamUrl']
-        date = item['publishedDate']
-        # One date value gives errors on some clients but cannot see any error with it
-        #Log('The value of date is %s' %date)
-        date = Datetime.ParseDate(item['publishedDate'])
+        raw_date = item['publishedDate']
+        #Log('the value of site is %s, stream url is %s and date is %s' %(site, stream_url, raw_date))
         try:
             duration = duration = item['duration'] * 1000
             duration = int(duration)
@@ -62,39 +61,44 @@ def Videos(url, title):
         try: thumb = item['thumbnail']['downloadUrl']
         except: thumb = item['snapshotHighUrl']
 
-        if 'mediaFiles' in item:
-            available_streams = []
-            media_list = item['mediaFiles']
-            for media_item in media_list:
-                media_source = item['mediaFiles'][media_item]['url']
-                media_type = item['mediaFiles'][media_item]['type']
-                #Log('the value of the media is %s, resolution is %s, and type is %s' %(media_source, media_item, media_type))
-                media_quality = GetResolution(media_item, media_type)
-                media_info = {'quality' : media_quality, 'type' : media_type, 'media_url': media_source}
-                available_streams.append(media_info)
-            oc.add(
-                CreateVideoClipObject(
-                    title = item['title'],
-                    url = stream_url,
-                    media_data = available_streams,
-                    originally_available_at = date,
-                    duration = duration,
-                    thumb = thumb
-                )
-            )
-        elif '/youtu.be/' in stream_url:
+        if site=='youtube':
             yt_id = stream_url.split('/')[-1]
             yt_url = YT_URL + yt_id
             oc.add(
                 VideoClipObject(
                     title = item['title'],
                     url = stream_url,
-                    originally_available_at = date,
+                    originally_available_at = Datetime.ParseDate(raw_date),
                     duration = duration,
                     thumb = Resource.ContentsOfURLWithFallback(url=thumb)
                 )
             )
+        elif site=='haystack':
+            if 'mediaFiles' in item:
+                available_streams = []
+                media_list = item['mediaFiles']
+                for media_item in media_list:
+                    media_source = item['mediaFiles'][media_item]['url']
+                    media_type = item['mediaFiles'][media_item]['type']
+                    #Log('the value of the media is %s, resolution is %s, and type is %s' %(media_source, media_item, media_type))
+                    media_quality = GetResolution(media_item, media_type)
+                    media_info = {'quality' : media_quality, 'type' : media_type, 'media_url': media_source}
+                    available_streams.append(media_info)
+                oc.add(
+                    CreateVideoClipObject(
+                        title = item['title'],
+                        url = stream_url,
+                        media_data = available_streams,
+                        raw_date = raw_date,
+                        duration = duration,
+                        thumb = thumb
+                    )
+                )
+            else:
+                Log('haystack but no mediafiles')
+                continue
         else:
+            Log('The %s site is not currently supported' %site)
             continue
 
     if len(oc) < 1:
@@ -104,8 +108,8 @@ def Videos(url, title):
         return oc
 
 ####################################################################################################
-@route(PREFIX + '/createvideoclipobject', media_data=list, include_container=bool)
-def CreateVideoClipObject(media_data, url, title, originally_available_at, duration, thumb, include_container=False, **kwargs):
+@route(PREFIX + '/createvideoclipobject', media_data=list, include_container=bool, duration=int)
+def CreateVideoClipObject(media_data, url, title, raw_date, duration, thumb, include_container=False, **kwargs):
 
     media_objects = []
     for media in media_data:
@@ -139,11 +143,11 @@ def CreateVideoClipObject(media_data, url, title, originally_available_at, durat
             continue
 
     videoclip_obj = VideoClipObject(
-        key = Callback(CreateVideoClipObject, media_data=media_data, url=url, title=title, originally_available_at=originally_available_at, duration=duration, thumb=thumb, include_container=True),
+        key = Callback(CreateVideoClipObject, media_data=media_data, url=url, title=title, raw_date=raw_date, duration=duration, thumb=thumb, include_container=True),
         rating_key = url,
         title = title,
         duration = duration,
-        originally_available_at = originally_available_at,
+        originally_available_at = Datetime.ParseDate(raw_date),
         thumb = Resource.ContentsOfURLWithFallback(url=thumb),
         items = media_objects
     )
